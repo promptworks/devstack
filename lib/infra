@@ -31,6 +31,7 @@ function install_infra {
     # bring down global requirements
     git_clone $REQUIREMENTS_REPO $REQUIREMENTS_DIR $REQUIREMENTS_BRANCH
     echo "suds-jurko>=0.6" >> $REQUIREMENTS_DIR/global-requirements.txt
+    sed -i 's/.*python-neutronclient.*/python-neutronclient==2.3.9/g' $REQUIREMENTS_DIR/global-requirements.txt
     pip_install $REQUIREMENTS_DIR
 
     # Install pbr
