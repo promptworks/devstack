@@ -530,20 +530,26 @@ function start_keystone {
         service_port=$KEYSTONE_SERVICE_PORT_INT
         auth_protocol="http"
     fi
-
-    # if [ "$KEYSTONE_USE_MOD_WSGI" == "True" ]; then
+    warn "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+    warn "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+    warn "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+    warn "$KEYSTONE_USE_MOD_WSGI"
+    warn "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+    warn "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+    warn "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+    if [ "$KEYSTONE_USE_MOD_WSGI" == "True" ]; then
         enable_apache_site keystone
         restart_apache_server
         tail_log key /var/log/$APACHE_NAME/keystone.log
         tail_log key-access /var/log/$APACHE_NAME/keystone_access.log
-    # else
-    #     local EXTRA_PARAMS=""
-    #     if [ "$ENABLE_DEBUG_LOG_LEVEL" == "True" ]; then
-    #         EXTRA_PARAMS="--debug"
-    #     fi
-    #     # Start Keystone in a screen window
-    #     run_process key "$KEYSTONE_DIR/bin/keystone-all --config-file $KEYSTONE_CONF $EXTRA_PARAMS"
-    # fi
+    else
+        local EXTRA_PARAMS=""
+        if [ "$ENABLE_DEBUG_LOG_LEVEL" == "True" ]; then
+            EXTRA_PARAMS="--debug"
+        fi
+        # Start Keystone in a screen window
+        run_process key "$KEYSTONE_DIR/bin/keystone-all --config-file $KEYSTONE_CONF $EXTRA_PARAMS"
+    fi
 
     echo "Waiting for keystone to start..."
     # Check that the keystone service is running. Even if the tls tunnel
