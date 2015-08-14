@@ -32,6 +32,8 @@ function install_infra {
     sed -i 's/.*python-neutronclient.*/python-neutronclient==2.3.9/g' $REQUIREMENTS_DIR/global-requirements.txt
     echo "python-group-based-policy-client==0.9.0" >> $REQUIREMENTS_DIR/global-requirements.txt
 
+    pip_install $REQUIREMENTS_DIR
+
     # Install pbr
     if use_library_from_git "pbr"; then
         git_clone_by_name "pbr"
