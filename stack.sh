@@ -1531,7 +1531,6 @@ echo "run time displayed"
 # Uncomment this to enable running exercises at the end of devstack install
 #./exercise.sh
 
-exit 0
 # Restore/close logging file descriptors
 echo "redirecting stdout to FD 3"
 # exec 1>&3
@@ -1541,3 +1540,4 @@ echo "Close FD 3"
 exec 3>&-
 echo "Close FD 6"
 exec 6>&-
+exit 0
