@@ -1532,12 +1532,12 @@ echo "run time displayed"
 #./exercise.sh
 
 # Restore/close logging file descriptors
-echo "0"
+echo "redirecting stdout to FD 3"
 exec 1>&3
-echo "1"
+echo "redirecting stderr to FD 3"
 exec 2>&3
-echo "2"
+echo "redirecting FD 3 to ???"
 exec 3>&-
-echo "3"
+echo "redirecting FD 6 to ???"
 exec 6>&-
-echo "4"
+exit 0
