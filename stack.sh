@@ -1451,15 +1451,18 @@ fi
 
 # Echo ``HOST_IP`` - useful for ``build_uec.sh``, which uses dhcp to give the instance an address
 echo "This is your host ip: $HOST_IP"
-
+echo "0"
 # Warn that a deprecated feature was used
 if [[ -n "$DEPRECATED_TEXT" ]]; then
     echo_summary "WARNING: $DEPRECATED_TEXT"
 fi
 
+echo "1"
 if is_service_enabled neutron; then
+echo "2"
     # TODO(dtroyer): Remove Q_AGENT_EXTRA_AGENT_OPTS after stable/juno branch is cut
     if [[ -n "$Q_AGENT_EXTRA_AGENT_OPTS" ]]; then
+echo "3"
         echo ""
         echo_summary "WARNING: Q_AGENT_EXTRA_AGENT_OPTS is used"
         echo "You are using Q_AGENT_EXTRA_AGENT_OPTS to pass configuration into $NEUTRON_CONF."
@@ -1470,13 +1473,17 @@ if is_service_enabled neutron; then
 [DEFAULT]
 "
         for I in "${Q_AGENT_EXTRA_AGENT_OPTS[@]}"; do
+echo "4"
             # Replace the first '=' with ' ' for iniset syntax
             echo ${I}
         done
+echo "5"
     fi
+echo "6"
 
     # TODO(dtroyer): Remove Q_AGENT_EXTRA_SRV_OPTS after stable/juno branch is cut
     if [[ -n "$Q_AGENT_EXTRA_SRV_OPTS" ]]; then
+echo "7"
         echo ""
         echo_summary "WARNING: Q_AGENT_EXTRA_SRV_OPTS is used"
         echo "You are using Q_AGENT_EXTRA_SRV_OPTS to pass configuration into $NEUTRON_CONF."
@@ -1486,16 +1493,22 @@ if is_service_enabled neutron; then
 [[post-config|/\$Q_PLUGIN_CONF_FILE]]
 [DEFAULT]
 "
+echo "8"
         for I in "${Q_AGENT_EXTRA_SRV_OPTS[@]}"; do
+echo "9"
             # Replace the first '=' with ' ' for iniset syntax
             echo ${I}
         done
+echo "10"
     fi
 fi
 
+echo "11"
 if is_service_enabled cinder; then
+echo "12"
     # TODO(dtroyer): Remove CINDER_MULTI_LVM_BACKEND after stable/juno branch is cut
     if [[ "$CINDER_MULTI_LVM_BACKEND" = "True" ]]; then
+echo "13"
         echo ""
         echo_summary "WARNING: CINDER_MULTI_LVM_BACKEND is used"
         echo "You are using CINDER_MULTI_LVM_BACKEND to configure Cinder's multiple LVM backends"
@@ -1509,18 +1522,22 @@ CINDER_ENABLED_BACKENDS=lvm:lvmdriver-1,lvm:lvmdriver-2
 fi
 
 # Indicate how long this took to run (bash maintained variable ``SECONDS``)
-echo_summary "stack.sh completed in $SECONDS seconds."
+echo "14"
 
+echo "Showing run time"
+echo "stack.sh completed in $SECONDS seconds."
+echo_summary "stack.sh completed in $SECONDS seconds."
+echo "run time displayed"
 # Uncomment this to enable running exercises at the end of devstack install
 #./exercise.sh
 
 # Restore/close logging file descriptors
 echo "0"
-# exec 1>&3
+exec 1>&3
 echo "1"
-# exec 2>&3
+exec 2>&3
 echo "2"
-# exec 3>&-
+exec 3>&-
 echo "3"
-# exec 6>&-
+exec 6>&-
 echo "4"
