@@ -1540,4 +1540,5 @@ echo "Close FD 3"
 exec 3>&-
 echo "Close FD 6"
 exec 6>&-
+echo "Closed FD 6, just exit!"
 exit 0
