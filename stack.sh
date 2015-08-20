@@ -1515,7 +1515,12 @@ echo_summary "stack.sh completed in $SECONDS seconds."
 #./exercise.sh
 
 # Restore/close logging file descriptors
-exec 1>&3
-exec 2>&3
-exec 3>&-
-exec 6>&-
+echo "0"
+# exec 1>&3
+echo "1"
+# exec 2>&3
+echo "2"
+# exec 3>&-
+echo "3"
+# exec 6>&-
+echo "4"
