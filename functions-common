@@ -1553,7 +1553,7 @@ function pip_install {
     if [[ "$PIP_USE_MIRRORS" != "False" ]]; then
         pip_mirror_opt="--use-mirrors"
     fi
-
+    sleep 99999
     $xtrace
     $sudo_pip PIP_DOWNLOAD_CACHE=${PIP_DOWNLOAD_CACHE:-/var/cache/pip} \
         http_proxy=$http_proxy \
