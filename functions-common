@@ -1554,6 +1554,7 @@ function pip_install {
         pip_mirror_opt="--use-mirrors"
     fi
 
+    echo "Hey, we're gonna try this and see how it goes: $@"
     $xtrace
     $sudo_pip PIP_DOWNLOAD_CACHE=${PIP_DOWNLOAD_CACHE:-/var/cache/pip} \
         http_proxy=$http_proxy \
