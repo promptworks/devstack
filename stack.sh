@@ -456,7 +456,7 @@ function exit_trap {
             $TOP_DIR/tools/worlddump.py -d $LOGDIR
         fi
     fi
-
+    sleep 7200
     exit $r
 }
 
