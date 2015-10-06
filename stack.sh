@@ -30,7 +30,7 @@ unset LANG
 unset LANGUAGE
 LC_ALL=C
 export LC_ALL
-
+set -e
 # Make sure umask is sane
 umask 022
 
