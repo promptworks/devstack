@@ -326,6 +326,7 @@ function spinner {
 }
 
 function kill_spinner {
+    echo "spinnerpid: $LAST_SPINNER_PID"
     if [ ! -z "$LAST_SPINNER_PID" ]; then
         kill >/dev/null 2>&1 $LAST_SPINNER_PID
         printf "\b\b\bdone\n" >&3
@@ -335,14 +336,19 @@ function kill_spinner {
 # Echo text to the log file, summary log file and stdout
 # echo_summary "something to say"
 function echo_summary {
+    echo "in echo_summary"
     if [[ -t 3 && "$VERBOSE" != "True" ]]; then
+        echo "killing spinner"
         kill_spinner
         echo -n -e $@ >&6
+        echo "starting new spinner"
         spinner &
         LAST_SPINNER_PID=$!
+        echo "new spinner pid is $LAST_SPINNER_PID"
     else
         echo -e $@ >&6
     fi
+    echo "done with echo_summary"
 }
 
 # Echo text only to stdout, no log files
@@ -438,6 +444,11 @@ trap exit_trap EXIT
 function exit_trap {
     local r=$?
     jobs=$(jobs -p)
+
+    echo "jobs: $jobs"
+    echo "logfile: $LOGFILE"
+    echo "verbose: $VERBOSE"
+
     # Only do the kill when we're logging through a process substitution,
     # which currently is only to verbose logfile
     if [[ -n $jobs && -n "$LOGFILE" && "$VERBOSE" == "True" ]]; then
@@ -1500,13 +1511,13 @@ if is_service_enabled neutron; then
     fi
 fi
 
-echo "3"
+echo "3 ($$)"
 
 if is_service_enabled cinder; then
-    echo "3.1"
+    echo "3.1 ($$)"
     # TODO(dtroyer): Remove CINDER_MULTI_LVM_BACKEND after stable/juno branch is cut
     if [[ "$CINDER_MULTI_LVM_BACKEND" = "True" ]]; then
-        echo "3.1.1"
+        echo "3.1.1 ($$)"
         echo ""
         echo_summary "WARNING: CINDER_MULTI_LVM_BACKEND is used"
         echo "You are using CINDER_MULTI_LVM_BACKEND to configure Cinder's multiple LVM backends"
@@ -1519,10 +1530,14 @@ CINDER_ENABLED_BACKENDS=lvm:lvmdriver-1,lvm:lvmdriver-2
     fi
 fi
 echo "4"
+echo "about to call echo_summary.  jobs: "
+jobs
+echo "spinner pid is $LAST_SPINNER_PID"
 
 # Indicate how long this took to run (bash maintained variable ``SECONDS``)
 echo_summary "stack.sh completed in $SECONDS seconds."
-echo "5"
+
+echo "5 ($$)"
 
 # Uncomment this to enable running exercises at the end of devstack install
 #./exercise.sh
@@ -1532,4 +1547,5 @@ exec 1>&3
 exec 2>&3
 exec 3>&-
 exec 6>&-
-echo "5"
+echo "6 ($$)"
+echo_nolog "6 ($$)"
