@@ -1548,4 +1548,3 @@ exec 2>&3
 exec 3>&-
 exec 6>&-
 echo "6 ($$)"
-echo_nolog "6 ($$)"
