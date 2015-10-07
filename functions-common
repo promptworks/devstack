@@ -1555,6 +1555,10 @@ function pip_install {
     fi
 
     echo "Hey, we're gonna try this and see how it goes: $@"
+if [[ $@ == "-e /opt/stack/swift" ]]; then
+    exit 0
+fi
+
     $xtrace
     $sudo_pip PIP_DOWNLOAD_CACHE=${PIP_DOWNLOAD_CACHE:-/var/cache/pip} \
         http_proxy=$http_proxy \
@@ -1562,17 +1566,6 @@ function pip_install {
         no_proxy=$no_proxy \
         $cmd_pip install \
         $pip_mirror_opt $@
-
-    echo "SOMETHING MAY HAVE GONE WRONG ==============================="
-    echo $?
-    if [[ $? -eq 139 ]]; then
-        $sudo_pip PIP_DOWNLOAD_CACHE=${PIP_DOWNLOAD_CACHE:-/var/cache/pip} \
-            http_proxy=$http_proxy \
-            https_proxy=$https_proxy \
-            no_proxy=$no_proxy \
-            $cmd_pip install \
-            $pip_mirror_opt $@
-    fi
 
     if [[ "$INSTALL_TESTONLY_PACKAGES" == "True" ]]; then
         local test_req="$@/test-requirements.txt"
