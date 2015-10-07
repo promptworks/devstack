@@ -1560,7 +1560,8 @@ function pip_install {
         https_proxy=$https_proxy \
         no_proxy=$no_proxy \
         $cmd_pip install \
-        $pip_mirror_opt $@
+        $pip_mirror_opt $@ \
+        --log /opt/stack/pip.log
 
     if [[ "$INSTALL_TESTONLY_PACKAGES" == "True" ]]; then
         local test_req="$@/test-requirements.txt"
