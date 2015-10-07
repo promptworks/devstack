@@ -757,6 +757,7 @@ install_infra
 
 # Manually install futures==2.2.0, since a newer, unsupported version will be
 # installed otherwise
+easy_install simplejson
 pip_install futures==2.2.0
 
 # Install oslo libraries that have graduated

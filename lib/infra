@@ -28,6 +28,11 @@ REQUIREMENTS_DIR=$DEST/requirements
 # install_infra() - Collect source and prepare
 function install_infra {
     # bring down global requirements
+    echo "==========================="
+    echo $REQUIREMENTS_REPO
+    echo $REQUIREMENTS_DIR
+    echo $REQUIREMENTS_BRANCH
+    echo "==========================="
     git_clone $REQUIREMENTS_REPO $REQUIREMENTS_DIR $REQUIREMENTS_BRANCH
     sed -i 's/.*python-neutronclient.*/python-neutronclient==2.3.9/g' $REQUIREMENTS_DIR/global-requirements.txt
     echo "python-group-based-policy-client==0.9.0" >> $REQUIREMENTS_DIR/global-requirements.txt
