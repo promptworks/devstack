@@ -1429,14 +1429,14 @@ service_check
 
 set +o xtrace
 
-if [[ -n "$LOGFILE" ]]; then
-    exec 1>&3
-    # Force all output to stdout and logs now
-    exec 1> >( tee -a "${LOGFILE}" ) 2>&1
-else
+# if [[ -n "$LOGFILE" ]]; then
+#     exec 1>&3
+#     # Force all output to stdout and logs now
+#     exec 1> >( tee -a "${LOGFILE}" ) 2>&1
+# else
     # Force all output to stdout now
     exec 1>&3
-fi
+# fi
 
 
 # Using the cloud
