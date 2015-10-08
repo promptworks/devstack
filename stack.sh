@@ -346,9 +346,9 @@ function echo_summary {
         LAST_SPINNER_PID=$!
         echo "new spinner pid is $LAST_SPINNER_PID"
     else
-        echo -e $@ >&6
+        # echo -e $@ >&6
+        echo -e $@
     fi
-    echo "done with echo_summary"
 }
 
 # Echo text only to stdout, no log files
@@ -1543,8 +1543,8 @@ echo "5 ($$)"
 #./exercise.sh
 
 # Restore/close logging file descriptors
-exec 1>&3
-exec 2>&3
-exec 3>&-
-exec 6>&-
-echo "6 ($$)"
+# exec 1>&3
+# exec 2>&3
+# exec 3>&-
+# exec 6>&-
+# echo "6 ($$)"
