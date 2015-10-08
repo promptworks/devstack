@@ -367,56 +367,56 @@ fi
 # Set ``LOGFILE`` to turn on logging
 # Append '.xxxxxxxx' to the given name to maintain history
 # where 'xxxxxxxx' is a representation of the date the file was created
-TIMESTAMP_FORMAT=${TIMESTAMP_FORMAT:-"%F-%H%M%S"}
-if [[ -n "$LOGFILE" || -n "$SCREEN_LOGDIR" ]]; then
-    LOGDAYS=${LOGDAYS:-7}
-    CURRENT_LOG_TIME=$(date "+$TIMESTAMP_FORMAT")
-fi
+# TIMESTAMP_FORMAT=${TIMESTAMP_FORMAT:-"%F-%H%M%S"}
+# if [[ -n "$LOGFILE" || -n "$SCREEN_LOGDIR" ]]; then
+#     LOGDAYS=${LOGDAYS:-7}
+#     CURRENT_LOG_TIME=$(date "+$TIMESTAMP_FORMAT")
+# fi
 
-if [[ -n "$LOGFILE" ]]; then
-    # First clean up old log files.  Use the user-specified ``LOGFILE``
-    # as the template to search for, appending '.*' to match the date
-    # we added on earlier runs.
-    LOGDIR=$(dirname "$LOGFILE")
-    LOGFILENAME=$(basename "$LOGFILE")
-    mkdir -p $LOGDIR
-    find $LOGDIR -maxdepth 1 -name $LOGFILENAME.\* -mtime +$LOGDAYS -exec rm {} \;
-    LOGFILE=$LOGFILE.${CURRENT_LOG_TIME}
-    SUMFILE=$LOGFILE.${CURRENT_LOG_TIME}.summary
+# if [[ -n "$LOGFILE" ]]; then
+#     # First clean up old log files.  Use the user-specified ``LOGFILE``
+#     # as the template to search for, appending '.*' to match the date
+#     # we added on earlier runs.
+#     LOGDIR=$(dirname "$LOGFILE")
+#     LOGFILENAME=$(basename "$LOGFILE")
+#     mkdir -p $LOGDIR
+#     find $LOGDIR -maxdepth 1 -name $LOGFILENAME.\* -mtime +$LOGDAYS -exec rm {} \;
+#     LOGFILE=$LOGFILE.${CURRENT_LOG_TIME}
+#     SUMFILE=$LOGFILE.${CURRENT_LOG_TIME}.summary
 
-    # Redirect output according to config
+#     # Redirect output according to config
 
-    # Set fd 3 to a copy of stdout. So we can set fd 1 without losing
-    # stdout later.
-    exec 3>&1
-    if [[ "$VERBOSE" == "True" ]]; then
-        # Set fd 1 and 2 to write the log file
-        exec 1> >( $TOP_DIR/tools/outfilter.py -v -o "${LOGFILE}" ) 2>&1
-        # Set fd 6 to summary log file
-        exec 6> >( $TOP_DIR/tools/outfilter.py -o "${SUMFILE}" )
-    else
-        # Set fd 1 and 2 to primary logfile
-        exec 1> >( $TOP_DIR/tools/outfilter.py -o "${LOGFILE}" ) 2>&1
-        # Set fd 6 to summary logfile and stdout
-        exec 6> >( $TOP_DIR/tools/outfilter.py -v -o "${SUMFILE}" >&3 )
-    fi
+#     # Set fd 3 to a copy of stdout. So we can set fd 1 without losing
+#     # stdout later.
+#     exec 3>&1
+#     if [[ "$VERBOSE" == "True" ]]; then
+#         # Set fd 1 and 2 to write the log file
+#         exec 1> >( $TOP_DIR/tools/outfilter.py -v -o "${LOGFILE}" ) 2>&1
+#         # Set fd 6 to summary log file
+#         exec 6> >( $TOP_DIR/tools/outfilter.py -o "${SUMFILE}" )
+#     else
+#         # Set fd 1 and 2 to primary logfile
+#         exec 1> >( $TOP_DIR/tools/outfilter.py -o "${LOGFILE}" ) 2>&1
+#         # Set fd 6 to summary logfile and stdout
+#         exec 6> >( $TOP_DIR/tools/outfilter.py -v -o "${SUMFILE}" >&3 )
+#     fi
 
-    echo_summary "stack.sh log $LOGFILE"
-    # Specified logfile name always links to the most recent log
-    ln -sf $LOGFILE $LOGDIR/$LOGFILENAME
-    ln -sf $SUMFILE $LOGDIR/$LOGFILENAME.summary
-else
-    # Set up output redirection without log files
-    # Set fd 3 to a copy of stdout. So we can set fd 1 without losing
-    # stdout later.
-    exec 3>&1
-    if [[ "$VERBOSE" != "True" ]]; then
-        # Throw away stdout and stderr
-        exec 1>/dev/null 2>&1
-    fi
-    # Always send summary fd to original stdout
-    exec 6> >( $TOP_DIR/tools/outfilter.py -v >&3 )
-fi
+#     echo_summary "stack.sh log $LOGFILE"
+#     # Specified logfile name always links to the most recent log
+#     ln -sf $LOGFILE $LOGDIR/$LOGFILENAME
+#     ln -sf $SUMFILE $LOGDIR/$LOGFILENAME.summary
+# else
+#     # Set up output redirection without log files
+#     # Set fd 3 to a copy of stdout. So we can set fd 1 without losing
+#     # stdout later.
+#     exec 3>&1
+#     if [[ "$VERBOSE" != "True" ]]; then
+#         # Throw away stdout and stderr
+#         exec 1>/dev/null 2>&1
+#     fi
+#     # Always send summary fd to original stdout
+#     exec 6> >( $TOP_DIR/tools/outfilter.py -v >&3 )
+# fi
 
 # Set up logging of screen windows
 # Set ``SCREEN_LOGDIR`` to turn on logging of screen windows to the
