@@ -34,6 +34,8 @@ export LC_ALL
 # Make sure umask is sane
 umask 022
 
+echo "bduggan: DEBUG"
+
 # Not all distros have sbin in PATH for regular users.
 PATH=$PATH:/usr/local/sbin:/usr/sbin:/sbin
 
