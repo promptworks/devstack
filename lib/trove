@@ -225,9 +225,14 @@ function init_trove {
 
 # start_trove() - Start running processes, including screen
 function start_trove {
+    echo "starting trove"
     run_process tr-api "$TROVE_BIN_DIR/trove-api --config-file=$TROVE_CONF_DIR/trove.conf --debug"
+    echo "starting trove tr-api started"
     run_process tr-tmgr "$TROVE_BIN_DIR/trove-taskmanager --config-file=$TROVE_CONF_DIR/trove-taskmanager.conf --debug"
+    echo "starting trove tr-tmgr started"
     run_process tr-cond "$TROVE_BIN_DIR/trove-conductor --config-file=$TROVE_CONF_DIR/trove-conductor.conf --debug"
+    echo "starting trove tr-cond started"
+    echo "Done starting trove"
 }
 
 # stop_trove() - Stop running processes
