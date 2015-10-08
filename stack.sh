@@ -1435,7 +1435,7 @@ set +o xtrace
 #     exec 1> >( tee -a "${LOGFILE}" ) 2>&1
 # else
     # Force all output to stdout now
-    exec 1>&3
+    # exec 1>&3
 # fi
 
 
