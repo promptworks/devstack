@@ -38,7 +38,7 @@ NOVA_DIR=$DEST/nova
 
 # Nova virtual environment
 if [[ ${USE_VENV} = True ]]; then
-    # PROJECT_VENV["nova"]=${NOVA_DIR}.venv
+    PROJECT_VENV["nova"]=${NOVA_DIR}.venv
     NOVA_BIN_DIR=${PROJECT_VENV["nova"]}/bin
 else
     NOVA_BIN_DIR=$(get_python_exec_prefix)
