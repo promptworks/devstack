@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 
 # ``stack.sh`` is an opinionated OpenStack developer installation.  It
-# installs and configures various combinations of **Ceilometer**, **Cinder**,
-# **Glance**, **Heat**, **Horizon**, **Keystone**, **Nova**, **Neutron**,
-# and **Swift**
+# installs and configures various combinations of **Cinder**, **Glance**,
+# **Heat**, **Horizon**, **Keystone**, **Nova**, **Neutron**, and **Swift**
 
 # This script's options can be changed by setting appropriate environment
 # variables.  You can configure things like which git repositories to use,
@@ -13,23 +12,20 @@
 # a multi-node developer install.
 
 # To keep this script simple we assume you are running on a recent **Ubuntu**
-# (12.04 Precise or newer) or **Fedora** (F18 or newer) machine.  (It may work
-# on other platforms but support for those platforms is left to those who added
-# them to DevStack.)  It should work in a VM or physical server.  Additionally
-# we maintain a list of ``apt`` and ``rpm`` dependencies and other configuration
-# files in this repo.
+# (14.04 Trusty or newer), **Fedora** (F20 or newer), or **CentOS/RHEL**
+# (7 or newer) machine. (It may work on other platforms but support for those
+# platforms is left to those who added them to DevStack.) It should work in
+# a VM or physical server. Additionally, we maintain a list of ``deb`` and
+# ``rpm`` dependencies and other configuration files in this repo.
 
 # Learn more and get the most recent version at http://devstack.org
 
+# Print the commands being run so that we can see the command that triggers
+# an error.  It is also useful for following along as the install occurs.
+set -o xtrace
+
 # Make sure custom grep options don't get in the way
 unset GREP_OPTIONS
-
-# Sanitize language settings to avoid commands bailing out
-# with "unsupported locale setting" errors.
-unset LANG
-unset LANGUAGE
-LC_ALL=C
-export LC_ALL
 
 # Make sure umask is sane
 umask 022
@@ -37,8 +33,18 @@ umask 022
 # Not all distros have sbin in PATH for regular users.
 PATH=$PATH:/usr/local/sbin:/usr/sbin:/sbin
 
-# Keep track of the devstack directory
+# Keep track of the DevStack directory
 TOP_DIR=$(cd $(dirname "$0") && pwd)
+
+# Check for uninitialized variables, a big cause of bugs
+NOUNSET=${NOUNSET:-}
+if [[ -n "$NOUNSET" ]]; then
+    set -o nounset
+fi
+
+
+# Configuration
+# =============
 
 # Sanity Checks
 # -------------
@@ -48,7 +54,7 @@ if [[ -r $TOP_DIR/.stackenv ]]; then
     rm $TOP_DIR/.stackenv
 fi
 
-# ``stack.sh`` keeps the list of ``apt`` and ``rpm`` dependencies and config
+# ``stack.sh`` keeps the list of ``deb`` and ``rpm`` dependencies, config
 # templates and other useful files in the ``files`` subdirectory
 FILES=$TOP_DIR/files
 if [ ! -d $FILES ]; then
@@ -56,48 +62,83 @@ if [ ! -d $FILES ]; then
 fi
 
 # ``stack.sh`` keeps function libraries here
+# Make sure ``$TOP_DIR/inc`` directory is present
+if [ ! -d $TOP_DIR/inc ]; then
+    die $LINENO "missing devstack/inc"
+fi
+
+# ``stack.sh`` keeps project libraries here
 # Make sure ``$TOP_DIR/lib`` directory is present
 if [ ! -d $TOP_DIR/lib ]; then
     die $LINENO "missing devstack/lib"
 fi
 
-# Check if run as root
+# Check if run in POSIX shell
+if [[ "${POSIXLY_CORRECT}" == "y" ]]; then
+    set +o xtrace
+    echo "You are running POSIX compatibility mode, DevStack requires bash 4.2 or newer."
+    exit 1
+fi
+
 # OpenStack is designed to be run as a non-root user; Horizon will fail to run
 # as **root** since Apache will not serve content from **root** user).
 # ``stack.sh`` must not be run as **root**.  It aborts and suggests one course of
 # action to create a suitable user account.
 
 if [[ $EUID -eq 0 ]]; then
-    echo "You are running this script as root."
-    echo "Cut it out."
-    echo "Really."
-    echo "If you need an account to run DevStack, do this (as root, heh) to create a non-root account:"
-    echo "$TOP_DIR/tools/create-stack-user.sh"
+    set +o xtrace
+    echo "DevStack should be run as a user with sudo permissions, "
+    echo "not root."
+    echo "A \"stack\" user configured correctly can be created with:"
+    echo " $TOP_DIR/tools/create-stack-user.sh"
+    exit 1
+fi
+
+# OpenStack is designed to run at a system level, with system level
+# installation of python packages. It does not support running under a
+# virtual env, and will fail in really odd ways if you do this. Make
+# this explicit as it has come up on the mailing list.
+if [[ -n "$VIRTUAL_ENV" ]]; then
+    set +o xtrace
+    echo "You appear to be running under a python virtualenv."
+    echo "DevStack does not support this, as we may break the"
+    echo "virtualenv you are currently in by modifying "
+    echo "external system-level components the virtualenv relies on."
+    echo "We recommend you use a separate virtual-machine if "
+    echo "you are worried about DevStack taking over your system."
+    exit 1
+fi
+
+# Provide a safety switch for devstack. If you do a lot of devstack,
+# on a lot of different environments, you sometimes run it on the
+# wrong box. This makes there be a way to prevent that.
+if [[ -e $HOME/.no-devstack ]]; then
+    set +o xtrace
+    echo "You've marked this host as a no-devstack host, to save yourself from"
+    echo "running devstack accidentally. If this is in error, please remove the"
+    echo "~/.no-devstack file"
     exit 1
 fi
 
 # Prepare the environment
 # -----------------------
 
+# Initialize variables:
+LAST_SPINNER_PID=""
+
 # Import common functions
 source $TOP_DIR/functions
 
 # Import config functions
-source $TOP_DIR/lib/config
+source $TOP_DIR/inc/meta-config
+
+# Import 'public' stack.sh functions
+source $TOP_DIR/lib/stack
 
 # Determine what system we are running on.  This provides ``os_VENDOR``,
 # ``os_RELEASE``, ``os_UPDATE``, ``os_PACKAGE``, ``os_CODENAME``
 # and ``DISTRO``
 GetDistro
-
-# Warn users who aren't on an explicitly supported distro, but allow them to
-# override check and attempt installation with ``FORCE=yes ./stack``
-if [[ ! ${DISTRO} =~ (precise|trusty|7.0|wheezy|sid|testing|jessie|f19|f20|rhel6|rhel7) ]]; then
-    echo "WARNING: this script has not been tested on $DISTRO"
-    if [[ "$FORCE" != "yes" ]]; then
-        die $LINENO "If you wish to run this script anyway run with FORCE=yes"
-    fi
-fi
 
 
 # Global Settings
@@ -122,7 +163,6 @@ if [[ -r $TOP_DIR/local.conf ]]; then
     done
 fi
 
-
 # ``stack.sh`` is customizable by setting environment variables.  Override a
 # default setting via export::
 #
@@ -133,23 +173,34 @@ fi
 #
 #     DATABASE_PASSWORD=simple ./stack.sh
 #
-# Persistent variables can be placed in a ``localrc`` file::
+# Persistent variables can be placed in a ``local.conf`` file::
 #
+#     [[local|localrc]]
 #     DATABASE_PASSWORD=anothersecret
 #     DATABASE_USER=hellaroot
 #
 # We try to have sensible defaults, so you should be able to run ``./stack.sh``
-# in most cases.  ``localrc`` is not distributed with DevStack and will never
+# in most cases.  ``local.conf`` is not distributed with DevStack and will never
 # be overwritten by a DevStack update.
 #
 # DevStack distributes ``stackrc`` which contains locations for the OpenStack
 # repositories, branches to configure, and other configuration defaults.
-# ``stackrc`` sources ``localrc`` to allow you to safely override those settings.
+# ``stackrc`` sources the ``localrc`` section of ``local.conf`` to allow you to
+# safely override those settings.
 
 if [[ ! -r $TOP_DIR/stackrc ]]; then
     die $LINENO "missing $TOP_DIR/stackrc - did you grab more than just stack.sh?"
 fi
 source $TOP_DIR/stackrc
+
+# Warn users who aren't on an explicitly supported distro, but allow them to
+# override check and attempt installation with ``FORCE=yes ./stack``
+if [[ ! ${DISTRO} =~ (trusty|vivid|wily|7.0|wheezy|sid|testing|jessie|f21|f22|f23|rhel7) ]]; then
+    echo "WARNING: this script has not been tested on $DISTRO"
+    if [[ "$FORCE" != "yes" ]]; then
+        die $LINENO "If you wish to run this script anyway run with FORCE=yes"
+    fi
+fi
 
 # Check to see if we are already running DevStack
 # Note that this may fail if USE_SCREEN=False
@@ -167,34 +218,36 @@ fi
 # Make sure the proxy config is visible to sub-processes
 export_proxy_variables
 
-# Remove services which were negated in ENABLED_SERVICES
+# Remove services which were negated in ``ENABLED_SERVICES``
 # using the "-" prefix (e.g., "-rabbit") instead of
 # calling disable_service().
 disable_negated_services
 
-# Look for obsolete stuff
-if [[ ,${ENABLED_SERVICES}, =~ ,"swift", ]]; then
-    echo "FATAL: 'swift' is not supported as a service name"
-    echo "FATAL: Use the actual swift service names to enable them as required:"
-    echo "FATAL: s-proxy s-object s-container s-account"
-    exit 1
-fi
 
 # Configure sudo
 # --------------
 
-# We're not **root**, make sure ``sudo`` is available
+# We're not as **root** so make sure ``sudo`` is available
 is_package_installed sudo || install_package sudo
 
 # UEC images ``/etc/sudoers`` does not have a ``#includedir``, add one
 sudo grep -q "^#includedir.*/etc/sudoers.d" /etc/sudoers ||
     echo "#includedir /etc/sudoers.d" | sudo tee -a /etc/sudoers
 
-# Set up devstack sudoers
+# Conditionally setup detailed logging for sudo
+if [[ -n "$LOG_SUDO" ]]; then
+    TEMPFILE=`mktemp`
+    echo "Defaults log_output" > $TEMPFILE
+    chmod 0440 $TEMPFILE
+    sudo chown root:root $TEMPFILE
+    sudo mv $TEMPFILE /etc/sudoers.d/00_logging
+fi
+
+# Set up DevStack sudoers
 TEMPFILE=`mktemp`
 echo "$STACK_USER ALL=(root) NOPASSWD:ALL" >$TEMPFILE
-# Some binaries might be under /sbin or /usr/sbin, so make sure sudo will
-# see them by forcing PATH
+# Some binaries might be under ``/sbin`` or ``/usr/sbin``, so make sure sudo will
+# see them by forcing ``PATH``
 echo "Defaults:$STACK_USER secure_path=/sbin:/usr/sbin:/usr/bin:/bin:/usr/local/sbin:/usr/local/bin" >> $TEMPFILE
 echo "Defaults:$STACK_USER !requiretty" >> $TEMPFILE
 chmod 0440 $TEMPFILE
@@ -205,74 +258,58 @@ sudo mv $TEMPFILE /etc/sudoers.d/50_stack_sh
 # Configure Distro Repositories
 # -----------------------------
 
-# For debian/ubuntu make apt attempt to retry network ops on it's own
+# For Debian/Ubuntu make apt attempt to retry network ops on it's own
 if is_ubuntu; then
     echo 'APT::Acquire::Retries "20";' | sudo tee /etc/apt/apt.conf.d/80retry  >/dev/null
-fi
-
-# upstream Rackspace centos7 images have an issue where cloud-init is
-# installed via pip because there were not official packages when the
-# image was created (fix in the works).  Remove all pip packages
-# before we do anything else
-if [[ $DISTRO = "rhel7" && is_rackspace ]]; then
-    (sudo -H pip freeze | xargs sudo -H pip uninstall -y) || true
 fi
 
 # Some distros need to add repos beyond the defaults provided by the vendor
 # to pick up required packages.
 
-if [[ is_fedora && $DISTRO == "rhel6" ]]; then
-    # Installing Open vSwitch on RHEL requires enabling the RDO repo.
-    RHEL6_RDO_REPO_RPM=${RHEL6_RDO_REPO_RPM:-"http://rdo.fedorapeople.org/openstack-icehouse/rdo-release-icehouse.rpm"}
-    RHEL6_RDO_REPO_ID=${RHEL6_RDO_REPO_ID:-"openstack-icehouse"}
-    if ! sudo yum repolist enabled $RHEL6_RDO_REPO_ID | grep -q $RHEL6_RDO_REPO_ID; then
-        echo "RDO repo not detected; installing"
-        yum_install $RHEL6_RDO_REPO_RPM || \
-            die $LINENO "Error installing RDO repo, cannot continue"
-    fi
-fi
-
-if [[ is_fedora && ( $DISTRO == "rhel6" || $DISTRO == "rhel7" ) ]]; then
+if is_fedora && [[ $DISTRO == "rhel7" ]]; then
     # RHEL requires EPEL for many Open Stack dependencies
-    if ! sudo yum repolist enabled epel | grep -q 'epel'; then
-        echo "EPEL not detected; installing"
-        # This trick installs the latest epel-release from a bootstrap
-        # repo, then removes itself (as epel-release installed the
-        # "real" repo).
-        #
-        # you would think that rather than this, you could use
-        # $releasever directly in .repo file we create below.  However
-        # RHEL gives a $releasever of "6Server" which breaks the path;
-        # see https://bugzilla.redhat.com/show_bug.cgi?id=1150759
-        if [[ $DISTRO == "rhel7" ]]; then
-            epel_ver="7"
-        elif [[ $DISTRO == "rhel6" ]]; then
-            epel_ver="6"
-        fi
 
-        cat <<EOF | sudo tee /etc/yum.repos.d/epel-bootstrap.repo
-[epel]
+    # NOTE: We always remove and install latest -- some environments
+    # use snapshot images, and if EPEL version updates they break
+    # unless we update them to latest version.
+    if sudo yum repolist enabled epel | grep -q 'epel'; then
+        uninstall_package epel-release || true
+    fi
+
+    # This trick installs the latest epel-release from a bootstrap
+    # repo, then removes itself (as epel-release installed the
+    # "real" repo).
+    #
+    # You would think that rather than this, you could use
+    # $releasever directly in .repo file we create below.  However
+    # RHEL gives a $releasever of "6Server" which breaks the path;
+    # see https://bugzilla.redhat.com/show_bug.cgi?id=1150759
+    cat <<EOF | sudo tee /etc/yum.repos.d/epel-bootstrap.repo
+[epel-bootstrap]
 name=Bootstrap EPEL
-mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?repo=epel-$epel_ver&arch=\$basearch
+mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?repo=epel-7&arch=\$basearch
 failovermethod=priority
 enabled=0
 gpgcheck=0
 EOF
-        # bare yum call due to --enablerepo
-        sudo yum --enablerepo=epel -y install epel-release || \
-            die $LINENO "Error installing EPEL repo, cannot continue"
-        # epel rpm has installed it's version
-        sudo rm -f /etc/yum.repos.d/epel-bootstrap.repo
-    fi
+    # Enable a bootstrap repo.  It is removed after finishing
+    # the epel-release installation.
+    is_package_installed yum-utils || install_package yum-utils
+    sudo yum-config-manager --enable epel-bootstrap
+    yum_install epel-release || \
+        die $LINENO "Error installing EPEL repo, cannot continue"
+    # EPEL rpm has installed it's version
+    sudo rm -f /etc/yum.repos.d/epel-bootstrap.repo
 
     # ... and also optional to be enabled
-    is_package_installed yum-utils || install_package yum-utils
-    if [[ $DISTRO == "rhel7" ]]; then
-        OPTIONAL_REPO=rhel-7-server-optional-rpms
-    elif [[ $DISTRO == "rhel6" ]]; then
-        OPTIONAL_REPO=rhel-6-server-optional-rpms
+    sudo yum-config-manager --enable rhel-7-server-optional-rpms
+
+    sudo yum install -y https://rdoproject.org/repos/rdo-release.rpm
+
+    if is_oraclelinux; then
+        sudo yum-config-manager --enable ol7_optional_latest ol7_addons ol7_MySQL56
     fi
-    sudo yum-config-manager --enable ${OPTIONAL_REPO}
+
 fi
 
 
@@ -288,9 +325,6 @@ sudo mkdir -p $DEST
 safe_chown -R $STACK_USER $DEST
 safe_chmod 0755 $DEST
 
-# a basic test for $DEST path permissions (fatal on error unless skipped)
-check_path_perm_sanity ${DEST}
-
 # Destination path for service data
 DATA_DIR=${DATA_DIR:-${DEST}/data}
 sudo mkdir -p $DATA_DIR
@@ -304,12 +338,16 @@ if [ -z "`grep ^127.0.0.1 /etc/hosts | grep $LOCAL_HOSTNAME`" ]; then
     sudo sed -i "s/\(^127.0.0.1.*\)/\1 $LOCAL_HOSTNAME/" /etc/hosts
 fi
 
+# Ensure python is installed
+# --------------------------
+is_package_installed python || install_package python
+
 
 # Configure Logging
 # -----------------
 
 # Set up logging level
-VERBOSE=$(trueorfalse True $VERBOSE)
+VERBOSE=$(trueorfalse True VERBOSE)
 
 # Draw a spinner so the user knows something is happening
 function spinner {
@@ -351,32 +389,27 @@ function echo_nolog {
     echo $@ >&3
 }
 
-if [[ is_fedora && $DISTRO == "rhel6" ]]; then
-    # poor old python2.6 doesn't have argparse by default, which
-    # outfilter.py uses
-    is_package_installed python-argparse || install_package python-argparse
-fi
-
 # Set up logging for ``stack.sh``
 # Set ``LOGFILE`` to turn on logging
 # Append '.xxxxxxxx' to the given name to maintain history
 # where 'xxxxxxxx' is a representation of the date the file was created
 TIMESTAMP_FORMAT=${TIMESTAMP_FORMAT:-"%F-%H%M%S"}
-if [[ -n "$LOGFILE" || -n "$SCREEN_LOGDIR" ]]; then
-    LOGDAYS=${LOGDAYS:-7}
-    CURRENT_LOG_TIME=$(date "+$TIMESTAMP_FORMAT")
+LOGDAYS=${LOGDAYS:-7}
+CURRENT_LOG_TIME=$(date "+$TIMESTAMP_FORMAT")
+
+if [[ -n ${LOGDIR:-} ]]; then
+    mkdir -p $LOGDIR
 fi
 
 if [[ -n "$LOGFILE" ]]; then
-    # First clean up old log files.  Use the user-specified ``LOGFILE``
-    # as the template to search for, appending '.*' to match the date
-    # we added on earlier runs.
-    LOGDIR=$(dirname "$LOGFILE")
-    LOGFILENAME=$(basename "$LOGFILE")
-    mkdir -p $LOGDIR
-    find $LOGDIR -maxdepth 1 -name $LOGFILENAME.\* -mtime +$LOGDAYS -exec rm {} \;
+    # Clean up old log files.  Append '.*' to the user-specified
+    # ``LOGFILE`` to match the date in the search template.
+    LOGFILE_DIR="${LOGFILE%/*}"           # dirname
+    LOGFILE_NAME="${LOGFILE##*/}"         # basename
+    mkdir -p $LOGFILE_DIR
+    find $LOGFILE_DIR -maxdepth 1 -name $LOGFILE_NAME.\* -mtime +$LOGDAYS -exec rm {} \;
     LOGFILE=$LOGFILE.${CURRENT_LOG_TIME}
-    SUMFILE=$LOGFILE.${CURRENT_LOG_TIME}.summary
+    SUMFILE=$LOGFILE.summary.${CURRENT_LOG_TIME}
 
     # Redirect output according to config
 
@@ -397,8 +430,8 @@ if [[ -n "$LOGFILE" ]]; then
 
     echo_summary "stack.sh log $LOGFILE"
     # Specified logfile name always links to the most recent log
-    ln -sf $LOGFILE $LOGDIR/$LOGFILENAME
-    ln -sf $SUMFILE $LOGDIR/$LOGFILENAME.summary
+    ln -sf $LOGFILE $LOGFILE_DIR/$LOGFILE_NAME
+    ln -sf $SUMFILE $LOGFILE_DIR/$LOGFILE_NAME.summary
 else
     # Set up output redirection without log files
     # Set fd 3 to a copy of stdout. So we can set fd 1 without losing
@@ -414,10 +447,11 @@ fi
 
 # Set up logging of screen windows
 # Set ``SCREEN_LOGDIR`` to turn on logging of screen windows to the
-# directory specified in ``SCREEN_LOGDIR``, we will log to the the file
+# directory specified in ``SCREEN_LOGDIR``, we will log to the file
 # ``screen-$SERVICE_NAME-$TIMESTAMP.log`` in that dir and have a link
 # ``screen-$SERVICE_NAME.log`` to the latest log file.
 # Logs are kept for as long specified in ``LOGDAYS``.
+# This is deprecated....logs go in ``LOGDIR``, only symlinks will be here now.
 if [[ -n "$SCREEN_LOGDIR" ]]; then
 
     # We make sure the directory is created.
@@ -429,6 +463,8 @@ if [[ -n "$SCREEN_LOGDIR" ]]; then
     fi
 fi
 
+# Basic test for ``$DEST`` path permissions (fatal on error unless skipped)
+check_path_perm_sanity ${DEST}
 
 # Configure Error Traps
 # ---------------------
@@ -476,50 +512,8 @@ function err_trap {
 # Begin trapping error exit codes
 set -o errexit
 
-# Print the commands being run so that we can see the command that triggers
-# an error.  It is also useful for following along as the install occurs.
-set -o xtrace
-
-
-# Common Configuration
-# --------------------
-
-# Set ``OFFLINE`` to ``True`` to configure ``stack.sh`` to run cleanly without
-# Internet access. ``stack.sh`` must have been previously run with Internet
-# access to install prerequisites and fetch repositories.
-OFFLINE=`trueorfalse False $OFFLINE`
-
-# Set ``ERROR_ON_CLONE`` to ``True`` to configure ``stack.sh`` to exit if
-# the destination git repository does not exist during the ``git_clone``
-# operation.
-ERROR_ON_CLONE=`trueorfalse False $ERROR_ON_CLONE`
-
-# Whether to enable the debug log level in OpenStack services
-ENABLE_DEBUG_LOG_LEVEL=`trueorfalse True $ENABLE_DEBUG_LOG_LEVEL`
-
-# Set fixed and floating range here so we can make sure not to use addresses
-# from either range when attempting to guess the IP to use for the host.
-# Note that setting FIXED_RANGE may be necessary when running DevStack
-# in an OpenStack cloud that uses either of these address ranges internally.
-FLOATING_RANGE=${FLOATING_RANGE:-172.24.4.0/24}
-FIXED_RANGE=${FIXED_RANGE:-10.0.0.0/24}
-FIXED_NETWORK_SIZE=${FIXED_NETWORK_SIZE:-256}
-
-HOST_IP=$(get_default_host_ip $FIXED_RANGE $FLOATING_RANGE "$HOST_IP_IFACE" "$HOST_IP")
-if [ "$HOST_IP" == "" ]; then
-    die $LINENO "Could not determine host ip address.  See local.conf for suggestions on setting HOST_IP."
-fi
-
-# Allow the use of an alternate hostname (such as localhost/127.0.0.1) for service endpoints.
-SERVICE_HOST=${SERVICE_HOST:-$HOST_IP}
-
-# Configure services to use syslog instead of writing to individual log files
-SYSLOG=`trueorfalse False $SYSLOG`
-SYSLOG_HOST=${SYSLOG_HOST:-$HOST_IP}
-SYSLOG_PORT=${SYSLOG_PORT:-516}
-
-# Use color for logging output (only available if syslog is not used)
-LOG_COLOR=`trueorfalse True $LOG_COLOR`
+# Print the kernel version
+uname -a
 
 # Reset the bundle of CA certificates
 SSL_BUNDLE_FILE="$DATA_DIR/ca-bundle.pem"
@@ -529,14 +523,7 @@ rm -f $SSL_BUNDLE_FILE
 source $TOP_DIR/lib/database
 source $TOP_DIR/lib/rpc_backend
 
-# Make sure we only have one rpc backend enabled,
-# and the specified rpc backend is available on your platform.
-check_rpc_backend
-
-# Use native SSL for servers in SSL_ENABLED_SERVICES
-USE_SSL=$(trueorfalse False $USE_SSL)
-
-# Service to enable with SSL if USE_SSL is True
+# Service to enable with SSL if ``USE_SSL`` is True
 SSL_ENABLED_SERVICES="key,nova,cinder,glance,s-proxy,neutron"
 
 if is_service_enabled tls-proxy && [ "$USE_SSL" == "True" ]; then
@@ -546,7 +533,14 @@ fi
 # Configure Projects
 # ==================
 
-# Import apache functions
+# Clone all external plugins
+fetch_plugins
+
+# Plugin Phase 0: override_defaults - allow plugins to override
+# defaults before other services are run
+run_phase override_defaults
+
+# Import Apache functions
 source $TOP_DIR/lib/apache
 
 # Import TLS functions
@@ -555,29 +549,25 @@ source $TOP_DIR/lib/tls
 # Source project function libraries
 source $TOP_DIR/lib/infra
 source $TOP_DIR/lib/oslo
-source $TOP_DIR/lib/stackforge
+source $TOP_DIR/lib/lvm
 source $TOP_DIR/lib/horizon
 source $TOP_DIR/lib/keystone
 source $TOP_DIR/lib/glance
 source $TOP_DIR/lib/nova
 source $TOP_DIR/lib/cinder
 source $TOP_DIR/lib/swift
-source $TOP_DIR/lib/ceilometer
 source $TOP_DIR/lib/heat
-source $TOP_DIR/lib/neutron
-source $TOP_DIR/lib/baremetal
+source $TOP_DIR/lib/neutron-legacy
 source $TOP_DIR/lib/ldap
 source $TOP_DIR/lib/dstat
+source $TOP_DIR/lib/dlm
 
 # Extras Source
 # --------------
 
 # Phase: source
-if [[ -d $TOP_DIR/extras.d ]]; then
-    for i in $TOP_DIR/extras.d/*.sh; do
-        [[ -r $i ]] && source $i source
-    done
-fi
+run_phase source
+
 
 # Interactive Configuration
 # -------------------------
@@ -586,7 +576,8 @@ fi
 
 # Generic helper to configure passwords
 function read_password {
-    XTRACE=$(set +o | grep xtrace)
+    local xtrace
+    xtrace=$(set +o | grep xtrace)
     set +o xtrace
     var=$1; msg=$2
     pw=${!var}
@@ -594,7 +585,7 @@ function read_password {
     if [[ -f $RC_DIR/localrc ]]; then
         localrc=$TOP_DIR/localrc
     else
-        localrc=$TOP_DIR/.localrc.auto
+        localrc=$TOP_DIR/.localrc.password
     fi
 
     # If the password is not defined yet, proceed to prompt user for a password.
@@ -604,13 +595,15 @@ function read_password {
             touch $localrc
         fi
 
-        # Presumably if we got this far it can only be that our localrc is missing
-        # the required password.  Prompt user for a password and write to localrc.
+        # Presumably if we got this far it can only be that our
+        # localrc is missing the required password.  Prompt user for a
+        # password and write to localrc.
+
         echo ''
         echo '################################################################################'
         echo $msg
         echo '################################################################################'
-        echo "This value will be written to your localrc file so you don't have to enter it "
+        echo "This value will be written to ${localrc} file so you don't have to enter it "
         echo "again.  Use only alphanumeric characters."
         echo "If you leave this blank, a random default value will be used."
         pw=" "
@@ -627,13 +620,16 @@ function read_password {
         eval "$var=$pw"
         echo "$var=$pw" >> $localrc
     fi
-    $XTRACE
+
+    # restore previous xtrace value
+    $xtrace
 }
 
 
 # Database Configuration
+# ----------------------
 
-# To select between database backends, add the following to ``localrc``:
+# To select between database backends, add the following to ``local.conf``:
 #
 #    disable_service mysql
 #    enable_service postgresql
@@ -645,8 +641,12 @@ initialize_database_backends && echo "Using $DATABASE_TYPE database backend" || 
 
 
 # Queue Configuration
+# -------------------
 
 # Rabbit connection info
+# In multi node DevStack, second node needs ``RABBIT_USERID``, but rabbit
+# isn't enabled.
+RABBIT_USERID=${RABBIT_USERID:-stackrabbit}
 if is_service_enabled rabbit; then
     RABBIT_HOST=${RABBIT_HOST:-$SERVICE_HOST}
     read_password RABBIT_PASSWORD "ENTER A PASSWORD TO USE FOR RABBIT."
@@ -654,8 +654,9 @@ fi
 
 
 # Keystone
+# --------
 
-if is_service_enabled key; then
+if is_service_enabled keystone; then
     # The ``SERVICE_TOKEN`` is used to bootstrap the Keystone database.  It is
     # just a string and is not a 'real' Keystone token.
     read_password SERVICE_TOKEN "ENTER A SERVICE_TOKEN TO USE FOR THE SERVICE ADMIN TOKEN."
@@ -665,14 +666,14 @@ if is_service_enabled key; then
     read_password ADMIN_PASSWORD "ENTER A PASSWORD TO USE FOR HORIZON AND KEYSTONE (20 CHARS OR LESS)."
 
     # Keystone can now optionally install OpenLDAP by enabling the ``ldap``
-    # service in ``localrc`` (e.g. ``enable_service ldap``).
+    # service in ``local.conf`` (e.g. ``enable_service ldap``).
     # To clean out the Keystone contents in OpenLDAP set ``KEYSTONE_CLEAR_LDAP``
-    # to ``yes`` (e.g. ``KEYSTONE_CLEAR_LDAP=yes``) in ``localrc``.  To enable the
+    # to ``yes`` (e.g. ``KEYSTONE_CLEAR_LDAP=yes``) in ``local.conf``.  To enable the
     # Keystone Identity Driver (``keystone.identity.backends.ldap.Identity``)
     # set ``KEYSTONE_IDENTITY_BACKEND`` to ``ldap`` (e.g.
-    # ``KEYSTONE_IDENTITY_BACKEND=ldap``) in ``localrc``.
+    # ``KEYSTONE_IDENTITY_BACKEND=ldap``) in ``local.conf``.
 
-    # only request ldap password if the service is enabled
+    # Only request LDAP password if the service is enabled
     if is_service_enabled ldap; then
         read_password LDAP_PASSWORD "ENTER A PASSWORD TO USE FOR LDAP"
     fi
@@ -680,6 +681,7 @@ fi
 
 
 # Swift
+# -----
 
 if is_service_enabled s-proxy; then
     # We only ask for Swift Hash if we have enabled swift service.
@@ -692,50 +694,33 @@ if is_service_enabled s-proxy; then
     fi
 fi
 
+# Save configuration values
+save_stackenv $LINENO
+
 
 # Install Packages
 # ================
 
 # OpenStack uses a fair number of other projects.
 
+# Bring down global requirements before any use of pip_install. This is
+# necessary to ensure that the constraints file is in place before we
+# attempt to apply any constraints to pip installs.
+git_clone $REQUIREMENTS_REPO $REQUIREMENTS_DIR $REQUIREMENTS_BRANCH
+
 # Install package requirements
 # Source it so the entire environment is available
 echo_summary "Installing package prerequisites"
 source $TOP_DIR/tools/install_prereqs.sh
 
-# Configure an appropriate python environment
+# Configure an appropriate Python environment
 if [[ "$OFFLINE" != "True" ]]; then
-    PYPI_ALTERNATIVE_URL=$PYPI_ALTERNATIVE_URL $TOP_DIR/tools/install_pip.sh
-fi
-
-# Do the ugly hacks for broken packages and distros
-source $TOP_DIR/tools/fixup_stuff.sh
-
-
-# Extras Pre-install
-# ------------------
-
-# Phase: pre-install
-if [[ -d $TOP_DIR/extras.d ]]; then
-    for i in $TOP_DIR/extras.d/*.sh; do
-        [[ -r $i ]] && source $i stack pre-install
-    done
-fi
-
-
-install_rpc_backend
-
-if is_service_enabled $DATABASE_BACKENDS; then
-    install_database
-fi
-
-if is_service_enabled neutron; then
-    install_neutron_agent_packages
+    PYPI_ALTERNATIVE_URL=${PYPI_ALTERNATIVE_URL:-""} $TOP_DIR/tools/install_pip.sh
 fi
 
 TRACK_DEPENDS=${TRACK_DEPENDS:-False}
 
-# Install python packages into a virtualenv so that we can track them
+# Install Python packages into a virtualenv so that we can track them
 if [[ $TRACK_DEPENDS = True ]]; then
     echo_summary "Installing Python packages into a virtualenv $DEST/.venv"
     pip_install -U virtualenv
@@ -746,23 +731,48 @@ if [[ $TRACK_DEPENDS = True ]]; then
     $DEST/.venv/bin/pip freeze > $DEST/requires-pre-pip
 fi
 
+# Do the ugly hacks for broken packages and distros
+source $TOP_DIR/tools/fixup_stuff.sh
+
+
+# Virtual Environment
+# -------------------
+
+# Install required infra support libraries
+install_infra
+
+# Extras Pre-install
+# ------------------
+# Phase: pre-install
+run_phase stack pre-install
+
+install_rpc_backend
+
+# NOTE(sdague): dlm install is conditional on one being enabled by configuration
+install_dlm
+configure_dlm
+
+if is_service_enabled $DATABASE_BACKENDS; then
+    install_database
+fi
+if [ -n "$DATABASE_TYPE" ]; then
+    install_database_python
+fi
+
+if is_service_enabled neutron; then
+    install_neutron_agent_packages
+fi
+
 # Check Out and Install Source
 # ----------------------------
 
 echo_summary "Installing OpenStack project source"
 
-# Install required infra support libraries
-install_infra
-
-# Install oslo libraries that have graduated
+# Install Oslo libraries
 install_oslo
 
-# Install stackforge libraries for testing
-if is_service_enabled stackforge_libs; then
-    install_stackforge
-fi
-
-# Install clients libraries
+# Install client libraries
+install_keystoneauth
 install_keystoneclient
 install_glanceclient
 install_cinderclient
@@ -780,20 +790,23 @@ fi
 # Install middleware
 install_keystonemiddleware
 
-if is_service_enabled key; then
+if is_service_enabled keystone; then
     if [ "$KEYSTONE_AUTH_HOST" == "$SERVICE_HOST" ]; then
-        install_keystone
+        stack_install_service keystone
         configure_keystone
     fi
 fi
 
 if is_service_enabled s-proxy; then
-    install_swift
+    if is_service_enabled ceilometer; then
+        install_ceilometermiddleware
+    fi
+    stack_install_service swift
     configure_swift
 
     # swift3 middleware to provide S3 emulation to Swift
     if is_service_enabled swift3; then
-        # replace the nova-objectstore port by the swift port
+        # Replace the nova-objectstore port by the swift port
         S3_SERVICE_PORT=8080
         git_clone $SWIFT3_REPO $SWIFT3_DIR $SWIFT3_BRANCH
         setup_develop $SWIFT3_DIR
@@ -801,24 +814,26 @@ if is_service_enabled s-proxy; then
 fi
 
 if is_service_enabled g-api n-api; then
-    # image catalog service
-    install_glance
+    # Image catalog service
+    stack_install_service glance
     configure_glance
 fi
 
 if is_service_enabled cinder; then
-    install_cinder
+    # Block volume service
+    stack_install_service cinder
     configure_cinder
 fi
 
 if is_service_enabled neutron; then
-    install_neutron
+    # Network service
+    stack_install_service neutron
     install_neutron_third_party
 fi
 
 if is_service_enabled nova; then
-    # compute service
-    install_nova
+    # Compute service
+    stack_install_service nova
     cleanup_nova
     configure_nova
 fi
@@ -827,19 +842,12 @@ if is_service_enabled horizon; then
     # django openstack_auth
     install_django_openstack_auth
     # dashboard
-    install_horizon
+    stack_install_service horizon
     configure_horizon
 fi
 
-if is_service_enabled ceilometer; then
-    install_ceilometerclient
-    install_ceilometer
-    echo_summary "Configuring Ceilometer"
-    configure_ceilometer
-fi
-
 if is_service_enabled heat; then
-    install_heat
+    stack_install_service heat
     install_heat_other
     cleanup_heat
     configure_heat
@@ -849,44 +857,24 @@ if is_service_enabled tls-proxy || [ "$USE_SSL" == "True" ]; then
     configure_CA
     init_CA
     init_cert
-    # Add name to /etc/hosts
-    # don't be naive and add to existing line!
+    # Add name to ``/etc/hosts``.
+    # Don't be naive and add to existing line!
 fi
+
 
 # Extras Install
 # --------------
 
 # Phase: install
-if [[ -d $TOP_DIR/extras.d ]]; then
-    for i in $TOP_DIR/extras.d/*.sh; do
-        [[ -r $i ]] && source $i stack install
-    done
-fi
+run_phase stack install
 
-
-# NOTE(mriedem): This is an unfortunate hack to workaround a problem with
-# uncapped requirements for python-novaclient in python-openstackclient 1.0.1
-# such that it pulls in the latest python-novaclient if something hasn't
-# already pulled in novaclient (like cinder) at a version that osc in juno will
-# accept. The large-ops job doesn't install cinder (since it uses the fake
-# nova virt driver) so osc is the first thing to install novaclient which
-# then causes a wedge due to capped novaclient in other juno projects.
-# So if we're running the large-ops job (per using the nova fake virt driver),
-# install novaclient per the g-r caps for stable/juno so osc doesn't pull in
-# the latest novaclient and wedge everything.
-if [[ "$VIRT_DRIVER" = 'fake' ]]; then
-    pip_install_gr python-novaclient
-fi
-
-
-# install the OpenStack client, needed for most setup commands
+# Install the OpenStack client, needed for most setup commands
 if use_library_from_git "python-openstackclient"; then
     git_clone_by_name "python-openstackclient"
     setup_dev_lib "python-openstackclient"
 else
     pip_install_gr python-openstackclient
 fi
-
 
 if [[ $TRACK_DEPENDS = True ]]; then
     $DEST/.venv/bin/pip freeze > $DEST/requires-post-pip
@@ -943,8 +931,8 @@ fi
 restart_rpc_backend
 
 
-# Export Certicate Authority Bundle
-# ---------------------------------
+# Export Certificate Authority Bundle
+# -----------------------------------
 
 # If certificates were used and written to the SSL bundle file then these
 # should be exported so clients can validate their connections.
@@ -965,13 +953,14 @@ fi
 # Configure screen
 # ----------------
 
-USE_SCREEN=$(trueorfalse True $USE_SCREEN)
+USE_SCREEN=$(trueorfalse True USE_SCREEN)
 if [[ "$USE_SCREEN" == "True" ]]; then
     # Create a new named screen to run processes in
     screen -d -m -S $SCREEN_NAME -t shell -s /bin/bash
     sleep 1
 
     # Set a reasonable status bar
+    SCREEN_HARDSTATUS=${SCREEN_HARDSTATUS:-}
     if [ -z "$SCREEN_HARDSTATUS" ]; then
         SCREEN_HARDSTATUS='%{= .} %-Lw%{= .}%> %n%f %t*%{= .}%+Lw%< %-=%{g}(%{d}%H/%l%{g})'
     fi
@@ -979,7 +968,7 @@ if [[ "$USE_SCREEN" == "True" ]]; then
     screen -r $SCREEN_NAME -X setenv PROMPT_COMMAND /bin/true
 fi
 
-# Clear screen rc file
+# Clear ``screenrc`` file
 SCREENRC=$TOP_DIR/$SCREEN_NAME-screenrc
 if [[ -e $SCREENRC ]]; then
     rm -f $SCREENRC
@@ -988,19 +977,24 @@ fi
 # Initialize the directory for service status check
 init_service_check
 
-# Dstat
-# -------
+# Save configuration values
+save_stackenv $LINENO
 
-# A better kind of sysstat, with the top process per time slice
-start_dstat
 
 # Start Services
 # ==============
 
+# Dstat
+# -----
+
+# A better kind of sysstat, with the top process per time slice
+start_dstat
+
+
 # Keystone
 # --------
 
-if is_service_enabled key; then
+if is_service_enabled keystone; then
     echo_summary "Starting Keystone"
 
     if [ "$KEYSTONE_AUTH_HOST" == "$SERVICE_HOST" ]; then
@@ -1008,16 +1002,18 @@ if is_service_enabled key; then
         start_keystone
     fi
 
+    export OS_IDENTITY_API_VERSION=3
+
     # Set up a temporary admin URI for Keystone
-    SERVICE_ENDPOINT=$KEYSTONE_AUTH_URI/v2.0
+    SERVICE_ENDPOINT=$KEYSTONE_AUTH_URI/v3
 
     if is_service_enabled tls-proxy; then
         export OS_CACERT=$INT_CA_DIR/ca-chain.pem
         # Until the client support is fixed, just use the internal endpoint
-        SERVICE_ENDPOINT=http://$KEYSTONE_AUTH_HOST:$KEYSTONE_AUTH_PORT_INT/v2.0
+        SERVICE_ENDPOINT=http://$KEYSTONE_AUTH_HOST:$KEYSTONE_AUTH_PORT_INT/v3
     fi
 
-    # Setup OpenStackclient token-flow auth
+    # Setup OpenStackClient token-endpoint auth
     export OS_TOKEN=$SERVICE_TOKEN
     export OS_URL=$SERVICE_ENDPOINT
 
@@ -1027,29 +1023,42 @@ if is_service_enabled key; then
     create_cinder_accounts
     create_neutron_accounts
 
-    if is_service_enabled ceilometer; then
-        create_ceilometer_accounts
-    fi
-
     if is_service_enabled swift; then
         create_swift_accounts
     fi
 
-    if is_service_enabled heat && [[ "$HEAT_STANDALONE" != "True" ]]; then
+    if is_service_enabled heat; then
         create_heat_accounts
     fi
 
-    # Begone token-flow auth
+    # Begone token auth
     unset OS_TOKEN OS_URL
 
-    # Set up password-flow auth creds now that keystone is bootstrapped
-    export OS_AUTH_URL=$SERVICE_ENDPOINT
-    export OS_TENANT_NAME=admin
-    export OS_USERNAME=admin
-    export OS_PASSWORD=$ADMIN_PASSWORD
-    export OS_REGION_NAME=$REGION_NAME
+    # Rather than just export these, we write them out to a
+    # intermediate userrc file that can also be used to debug if
+    # something goes wrong between here and running
+    # tools/create_userrc.sh (this script relies on services other
+    # than keystone being available, so we can't call it right now)
+    cat > $TOP_DIR/userrc_early <<EOF
+# Use this for debugging issues before files in accrc are created
+
+# Set up password auth credentials now that Keystone is bootstrapped
+export OS_AUTH_URL=$KEYSTONE_AUTH_URI
+export OS_USERNAME=admin
+export OS_USER_DOMAIN_ID=default
+export OS_PASSWORD=$ADMIN_PASSWORD
+export OS_PROJECT_NAME=admin
+export OS_PROJECT_DOMAIN_ID=default
+export OS_REGION_NAME=$REGION_NAME
+
+EOF
+
+    source $TOP_DIR/userrc_early
+
 fi
 
+# Write a clouds.yaml file
+write_clouds_yaml
 
 # Horizon
 # -------
@@ -1079,7 +1088,7 @@ if is_service_enabled neutron; then
     echo_summary "Configuring Neutron"
 
     configure_neutron
-    # Run init_neutron only on the node hosting the neutron API server
+    # Run init_neutron only on the node hosting the Neutron API server
     if is_service_enabled $DATABASE_BACKENDS && is_service_enabled q-svc; then
         init_neutron
     fi
@@ -1155,29 +1164,18 @@ if is_service_enabled nova; then
     init_nova_cells
 fi
 
-# Extra things to prepare nova for baremetal, before nova starts
-if is_service_enabled nova && is_baremetal; then
-    echo_summary "Preparing for nova baremetal"
-    prepare_baremetal_toolchain
-    configure_baremetal_nova_dirs
-fi
-
 
 # Extras Configuration
 # ====================
 
 # Phase: post-config
-if [[ -d $TOP_DIR/extras.d ]]; then
-    for i in $TOP_DIR/extras.d/*.sh; do
-        [[ -r $i ]] && source $i stack post-config
-    done
-fi
+run_phase stack post-config
 
 
 # Local Configuration
 # ===================
 
-# Apply configuration from local.conf if it exists for layer 2 services
+# Apply configuration from ``local.conf`` if it exists for layer 2 services
 # Phase: post-config
 merge_config_group $TOP_DIR/local.conf post-config
 
@@ -1199,49 +1197,33 @@ if is_service_enabled glance; then
     start_glance
 fi
 
+
 # Install Images
 # ==============
 
-# Upload an image to glance.
+# Upload an image to Glance.
 #
-# The default image is cirros, a small testing image which lets you login as **root**
-# cirros has a ``cloud-init`` analog supporting login via keypair and sending
+# The default image is CirrOS, a small testing image which lets you login as **root**
+# CirrOS has a ``cloud-init`` analog supporting login via keypair and sending
 # scripts as userdata.
-# See https://help.ubuntu.com/community/CloudInit for more on cloud-init
-#
-# Override ``IMAGE_URLS`` with a comma-separated list of UEC images.
-#  * **precise**: http://uec-images.ubuntu.com/precise/current/precise-server-cloudimg-amd64.tar.gz
+# See https://help.ubuntu.com/community/CloudInit for more on ``cloud-init``
 
 if is_service_enabled g-reg; then
-    TOKEN=$(keystone token-get | grep ' id ' | get_field 2)
-    die_if_not_set $LINENO TOKEN "Keystone fail to get token"
 
-    if is_baremetal; then
-        echo_summary "Creating and uploading baremetal images"
+    echo_summary "Uploading images"
 
-        # build and upload separate deploy kernel & ramdisk
-        upload_baremetal_deploy $TOKEN
-
-        # upload images, separating out the kernel & ramdisk for PXE boot
-        for image_url in ${IMAGE_URLS//,/ }; do
-            upload_baremetal_image $image_url $TOKEN
-        done
-    else
-        echo_summary "Uploading images"
-
-        # Option to upload legacy ami-tty, which works with xenserver
-        if [[ -n "$UPLOAD_LEGACY_TTY" ]]; then
-            IMAGE_URLS="${IMAGE_URLS:+${IMAGE_URLS},}https://github.com/downloads/citrix-openstack/warehouse/tty.tgz"
-        fi
-
-        for image_url in ${IMAGE_URLS//,/ }; do
-            upload_image $image_url $TOKEN
-        done
+    # Option to upload legacy ami-tty, which works with xenserver
+    if [[ -n "$UPLOAD_LEGACY_TTY" ]]; then
+        IMAGE_URLS="${IMAGE_URLS:+${IMAGE_URLS},}https://github.com/downloads/citrix-openstack/warehouse/tty.tgz"
     fi
+
+    for image_url in ${IMAGE_URLS//,/ }; do
+        upload_image $image_url
+    done
 fi
 
-# Create an access key and secret key for nova ec2 register image
-if is_service_enabled key && is_service_enabled swift3 && is_service_enabled nova; then
+# Create an access key and secret key for Nova EC2 register image
+if is_service_enabled keystone && is_service_enabled swift3 && is_service_enabled nova; then
     eval $(openstack ec2 credentials create --user nova --project $SERVICE_TENANT_NAME -f shell -c access -c secret)
     iniset $NOVA_CONF DEFAULT s3_access_key "$access"
     iniset $NOVA_CONF DEFAULT s3_secret_key "$secret"
@@ -1251,11 +1233,6 @@ fi
 # Create a randomized default value for the keymgr's fixed_key
 if is_service_enabled nova; then
     iniset $NOVA_CONF keymgr fixed_key $(generate_hex_string 32)
-fi
-
-if is_service_enabled zeromq; then
-    echo_summary "Starting zermomq receiver"
-    run_process zeromq "$OSLO_BIN_DIR/oslo-messaging-zmq-receiver"
 fi
 
 # Launch the nova-api and wait for it to answer before continuing
@@ -1288,7 +1265,7 @@ if is_service_enabled neutron; then
     start_neutron_agents
 fi
 # Once neutron agents are started setup initial network elements
-if is_service_enabled q-svc; then
+if is_service_enabled q-svc && [[ "$NEUTRON_CREATE_INITIAL_NETWORKS" == "True" ]]; then
     echo_summary "Creating initial neutron network elements"
     create_neutron_initial_network
     setup_neutron_debug
@@ -1302,22 +1279,17 @@ if is_service_enabled cinder; then
     start_cinder
     create_volume_types
 fi
-if is_service_enabled ceilometer; then
-    echo_summary "Starting Ceilometer"
-    init_ceilometer
-    start_ceilometer
-fi
 
-# Configure and launch heat engine, api and metadata
+# Configure and launch Heat engine, api and metadata
 if is_service_enabled heat; then
     # Initialize heat
     echo_summary "Configuring Heat"
     init_heat
     echo_summary "Starting Heat"
     start_heat
-    if [ "$HEAT_CREATE_TEST_IMAGE" = "True" ]; then
-        echo_summary "Building Heat functional test image"
-        build_heat_functional_test_image
+    if [ "$HEAT_BUILD_PIP_MIRROR" = "True" ]; then
+        echo_summary "Building Heat pip mirror"
+        build_heat_pip_mirror
     fi
 fi
 
@@ -1329,7 +1301,7 @@ fi
 # This step also creates certificates for tenants and users,
 # which is helpful in image bundle steps.
 
-if is_service_enabled nova && is_service_enabled key; then
+if is_service_enabled nova && is_service_enabled keystone; then
     USERRC_PARAMS="-PA --target-dir $TOP_DIR/accrc"
 
     if [ -f $SSL_BUNDLE_FILE ]; then
@@ -1344,69 +1316,38 @@ if is_service_enabled nova && is_service_enabled key; then
 fi
 
 
-# If we are running nova with baremetal driver, there are a few
-# last-mile configuration bits to attend to, which must happen
-# after n-api and n-sch have started.
-# Also, creating the baremetal flavor must happen after images
-# are loaded into glance, though just knowing the IDs is sufficient here
-if is_service_enabled nova && is_baremetal; then
-    # create special flavor for baremetal if we know what images to associate
-    [[ -n "$BM_DEPLOY_KERNEL_ID" ]] && [[ -n "$BM_DEPLOY_RAMDISK_ID" ]] && \
-        create_baremetal_flavor $BM_DEPLOY_KERNEL_ID $BM_DEPLOY_RAMDISK_ID
-
-    # otherwise user can manually add it later by calling nova-baremetal-manage
-    [[ -n "$BM_FIRST_MAC" ]] && add_baremetal_node
-
-    if [[ "$BM_DNSMASQ_FROM_NOVA_NETWORK" = "False" ]]; then
-        # NOTE: we do this here to ensure that our copy of dnsmasq is running
-        sudo pkill dnsmasq || true
-        sudo dnsmasq --conf-file= --port=0 --enable-tftp --tftp-root=/tftpboot \
-            --dhcp-boot=pxelinux.0 --bind-interfaces --pid-file=/var/run/dnsmasq.pid \
-            --interface=$BM_DNSMASQ_IFACE --dhcp-range=$BM_DNSMASQ_RANGE \
-            ${BM_DNSMASQ_DNS:+--dhcp-option=option:dns-server,$BM_DNSMASQ_DNS}
-    fi
-    # ensure callback daemon is running
-    sudo pkill nova-baremetal-deploy-helper || true
-    run_process baremetal "nova-baremetal-deploy-helper"
-fi
-
 # Save some values we generated for later use
-CURRENT_RUN_TIME=$(date "+$TIMESTAMP_FORMAT")
-echo "# $CURRENT_RUN_TIME" >$TOP_DIR/.stackenv
-for i in BASE_SQL_CONN ENABLED_SERVICES HOST_IP LOGFILE \
-    SERVICE_HOST SERVICE_PROTOCOL STACK_USER TLS_IP KEYSTONE_AUTH_PROTOCOL OS_CACERT; do
-    echo $i=${!i} >>$TOP_DIR/.stackenv
-done
+save_stackenv
 
 
-# Local Configuration
-# ===================
+# Wrapup configuration
+# ====================
 
-# Apply configuration from local.conf if it exists for layer 2 services
+# local.conf extra
+# ----------------
+
+# Apply configuration from ``local.conf`` if it exists for layer 2 services
 # Phase: extra
 merge_config_group $TOP_DIR/local.conf extra
 
 
 # Run extras
-# ==========
+# ----------
 
 # Phase: extra
-if [[ -d $TOP_DIR/extras.d ]]; then
-    for i in $TOP_DIR/extras.d/*.sh; do
-        [[ -r $i ]] && source $i stack extra
-    done
-fi
+run_phase stack extra
 
-# Local Configuration
-# ===================
 
-# Apply configuration from local.conf if it exists for layer 2 services
+# local.conf post-extra
+# ---------------------
+
+# Apply late configuration from ``local.conf`` if it exists for layer 2 services
 # Phase: post-extra
 merge_config_group $TOP_DIR/local.conf post-extra
 
 
 # Run local script
-# ================
+# ----------------
 
 # Run ``local.sh`` if it exists to perform user-managed tasks
 if [[ -x $TOP_DIR/local.sh ]]; then
@@ -1414,8 +1355,32 @@ if [[ -x $TOP_DIR/local.sh ]]; then
     $TOP_DIR/local.sh
 fi
 
+# Sanity checks
+# =============
+
 # Check the status of running services
 service_check
+
+# ensure that all the libraries we think we installed from git,
+# actually were.
+check_libs_from_git
+
+
+# Bash completion
+# ===============
+
+# Prepare bash completion for OSC
+openstack complete | sudo tee /etc/bash_completion.d/osc.bash_completion > /dev/null
+
+# If cinder is configured, set global_filter for PV devices
+if is_service_enabled cinder; then
+    if is_ubuntu; then
+        echo_summary "Configuring lvm.conf global device filter"
+        set_lvm_filter
+    else
+        echo_summary "Skip setting lvm filters for non Ubuntu systems"
+    fi
+fi
 
 
 # Fin
@@ -1432,85 +1397,36 @@ else
     exec 1>&3
 fi
 
+# Dump out the time totals
+time_totals
 
 # Using the cloud
-# ---------------
+# ===============
 
 echo ""
 echo ""
 echo ""
+echo "This is your host IP address: $HOST_IP"
+if [ "$HOST_IPV6" != "" ]; then
+    echo "This is your host IPv6 address: $HOST_IPV6"
+fi
 
 # If you installed Horizon on this server you should be able
 # to access the site using your browser.
 if is_service_enabled horizon; then
-    echo "Horizon is now available at http://$SERVICE_HOST/"
+    echo "Horizon is now available at http://$SERVICE_HOST$HORIZON_APACHE_ROOT"
 fi
 
 # If Keystone is present you can point ``nova`` cli to this server
-if is_service_enabled key; then
-    echo "Keystone is serving at $KEYSTONE_SERVICE_URI/v2.0/"
-    echo "Examples on using novaclient command line is in exercise.sh"
+if is_service_enabled keystone; then
+    echo "Keystone is serving at $KEYSTONE_SERVICE_URI/"
     echo "The default users are: admin and demo"
     echo "The password: $ADMIN_PASSWORD"
 fi
 
-# Echo ``HOST_IP`` - useful for ``build_uec.sh``, which uses dhcp to give the instance an address
-echo "This is your host ip: $HOST_IP"
-
 # Warn that a deprecated feature was used
 if [[ -n "$DEPRECATED_TEXT" ]]; then
     echo_summary "WARNING: $DEPRECATED_TEXT"
-fi
-
-if is_service_enabled neutron; then
-    # TODO(dtroyer): Remove Q_AGENT_EXTRA_AGENT_OPTS after stable/juno branch is cut
-    if [[ -n "$Q_AGENT_EXTRA_AGENT_OPTS" ]]; then
-        echo ""
-        echo_summary "WARNING: Q_AGENT_EXTRA_AGENT_OPTS is used"
-        echo "You are using Q_AGENT_EXTRA_AGENT_OPTS to pass configuration into $NEUTRON_CONF."
-        echo "Please convert that configuration in localrc to a $NEUTRON_CONF section in local.conf:"
-        echo "Q_AGENT_EXTRA_AGENT_OPTS will be removed early in the 'K' development cycle"
-        echo "
-[[post-config|/\$Q_PLUGIN_CONF_FILE]]
-[DEFAULT]
-"
-        for I in "${Q_AGENT_EXTRA_AGENT_OPTS[@]}"; do
-            # Replace the first '=' with ' ' for iniset syntax
-            echo ${I}
-        done
-    fi
-
-    # TODO(dtroyer): Remove Q_AGENT_EXTRA_SRV_OPTS after stable/juno branch is cut
-    if [[ -n "$Q_AGENT_EXTRA_SRV_OPTS" ]]; then
-        echo ""
-        echo_summary "WARNING: Q_AGENT_EXTRA_SRV_OPTS is used"
-        echo "You are using Q_AGENT_EXTRA_SRV_OPTS to pass configuration into $NEUTRON_CONF."
-        echo "Please convert that configuration in localrc to a $NEUTRON_CONF section in local.conf:"
-        echo "Q_AGENT_EXTRA_AGENT_OPTS will be removed early in the 'K' development cycle"
-        echo "
-[[post-config|/\$Q_PLUGIN_CONF_FILE]]
-[DEFAULT]
-"
-        for I in "${Q_AGENT_EXTRA_SRV_OPTS[@]}"; do
-            # Replace the first '=' with ' ' for iniset syntax
-            echo ${I}
-        done
-    fi
-fi
-
-if is_service_enabled cinder; then
-    # TODO(dtroyer): Remove CINDER_MULTI_LVM_BACKEND after stable/juno branch is cut
-    if [[ "$CINDER_MULTI_LVM_BACKEND" = "True" ]]; then
-        echo ""
-        echo_summary "WARNING: CINDER_MULTI_LVM_BACKEND is used"
-        echo "You are using CINDER_MULTI_LVM_BACKEND to configure Cinder's multiple LVM backends"
-        echo "Please convert that configuration in local.conf to use CINDER_ENABLED_BACKENDS."
-        echo "CINDER_MULTI_LVM_BACKEND will be removed early in the 'K' development cycle"
-        echo "
-[[local|localrc]]
-CINDER_ENABLED_BACKENDS=lvm:lvmdriver-1,lvm:lvmdriver-2
-"
-    fi
 fi
 
 # Indicate how long this took to run (bash maintained variable ``SECONDS``)
