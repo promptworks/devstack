@@ -717,6 +717,8 @@ echo_summary "Installing OpenStack project source"
 # Install required infra support libraries
 install_infra
 
+pip_install futures==2.2.0
+
 # Install oslo libraries that have graduated
 install_oslo
 

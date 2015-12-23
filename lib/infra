@@ -32,6 +32,8 @@ function install_infra {
     # bring down global requirements
     git_clone $REQUIREMENTS_REPO $REQUIREMENTS_DIR $REQUIREMENTS_BRANCH
 
+    pip_install $REQUIREMENTS_DIR
+
     # Install pbr
     if use_library_from_git "pbr"; then
         git_clone_by_name "pbr"
