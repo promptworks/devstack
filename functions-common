@@ -1551,17 +1551,17 @@ function pip_install {
     if [[ -z "$os_PACKAGE" ]]; then
         GetOSVersion
     fi
-    if [[ $TRACK_DEPENDS = True && ! "$@" =~ virtualenv ]]; then
-        # TRACK_DEPENDS=True installation creates a circular dependency when
-        # we attempt to install virtualenv into a virualenv, so we must global
-        # that installation.
-        source $DEST/.venv/bin/activate
-        local cmd_pip=$DEST/.venv/bin/pip
-        local sudo_pip="env"
-    else
-        local cmd_pip=$(get_pip_command)
-        local sudo_pip="env"
-    fi
+    # if [[ $TRACK_DEPENDS = True && ! "$@" =~ virtualenv ]]; then
+    #     # TRACK_DEPENDS=True installation creates a circular dependency when
+    #     # we attempt to install virtualenv into a virualenv, so we must global
+    #     # that installation.
+    #     source $DEST/.venv/bin/activate
+    #     local cmd_pip=$DEST/.venv/bin/pip
+    #     local sudo_pip="env"
+    # else
+    # fi
+    local cmd_pip=$(get_pip_command)
+    local sudo_pip="env"
 
     # Mirror option not needed anymore because pypi has CDN available,
     # but it's useful in certain circumstances
